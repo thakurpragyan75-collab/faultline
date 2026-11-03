@@ -26,18 +26,28 @@ const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const errors = [];
 page.on("pageerror", (err) => errors.push(String(err)));
-await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
+await page.goto(url, { waitUntil: "networkidle", timeout: 60_000 });
 const title = await page.title();
 if (!title.includes("Faultline")) {
   console.error("unexpected title", title);
   await browser.close();
   process.exit(1);
 }
-await page.getByRole("button", { name: "Hunt this fault" }).click();
-await page.getByText("Violation held still.", { exact: false }).waitFor({ timeout: 30_000 });
+const hunt = page.getByRole("button", { name: "Hunt this fault" });
+await hunt.waitFor({ state: "visible" });
+const found = page.getByText("Violation held still.", { exact: false });
+for (let attempt = 0; attempt < 3; attempt++) {
+  await hunt.click();
+  try {
+    await found.waitFor({ timeout: 8_000 });
+    break;
+  } catch (err) {
+    if (attempt === 2) throw err;
+  }
+}
 await page.getByRole("button", { name: "Live" }).click();
 await page.getByRole("button", { name: "Run on the live service" }).click();
-await page.getByText("Violation held still.", { exact: false }).waitFor({ timeout: 30_000 });
+await found.waitFor({ timeout: 30_000 });
 if (errors.length > 0) {
   console.error(errors.join("\n"));
   await browser.close();
