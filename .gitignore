@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.output/
+.nitro/
+.tanstack/
+.vercel/
+screenshots/
+artifacts/
+attachments/
+.project_id
+.node_modules.lock
+
+# Agent sandbox internals. The app env file stays: it is what keeps
+# VITE_AUTH_ENABLED off, which is how this lab actually runs.
+.grok/*
+!.grok/app-env.json
