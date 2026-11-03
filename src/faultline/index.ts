@@ -12,10 +12,12 @@ export {
   encodeExperiment,
   raftExperiment,
   registerExperiment,
+  reportFromObservation,
   runExperiment,
   shrinkExperiment,
 } from "./live/runner.ts";
 export type { Experiment, LiveReport, TargetId } from "./live/types.ts";
+export { externalExperiment, runExternal } from "./live/external.ts";
 
 import type { BugId, Outcome } from "./types.ts";
 import { bugInfo } from "./bugs.ts";

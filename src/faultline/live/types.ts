@@ -2,7 +2,7 @@
 
 import type { BugId, Fault, Hist, WorkItem } from "../types.ts";
 
-export type TargetId = "raft-service" | "register-service";
+export type TargetId = "raft-service" | "register-service" | "external-kv";
 
 /** One replayable run against a connected service. */
 export type Experiment = {

@@ -27,9 +27,18 @@ No account and no database are required. Leave `.grok/app-env.json` in place. It
 
 **Hunt** steps the built-in simulator. Press **Hunt this fault**, scrub the trace, then **Copy replay**. The link (`?r=`) replays that same simulated run.
 
-**Live** is the execution layer. It does not step the simulator. Pick **Raft service** or **Register service**, then press **Run on the live service**. Faultline starts that service, injects crashes and partitions, and checks only the replies and status pages that come back. **Copy replay** stores that experiment (`?e=`). Run it twice and the hash matches.
+**Live** is the execution layer. It does not step the simulator.
 
-The register has two builds. **Correct** flushes a write before acknowledging it, so the crash does not lose it. **Amnesia** acknowledges first. Any other chip runs the correct register on purpose.
+- **Raft service** and **Register service** run inside the page. They are reference builds of Faultline's own code.
+- **External disk** is a separate program, `targets/kv-server.mjs`. Faultline did not implement its storage. The lab starts that process, writes a real file, kills the process, and reads what the next process loads. Pick **Amnesia** to ack a write before `fsync`. **Correct** fsyncs first, so the crash keeps the value.
+
+`npm run dev` starts the disk process when you press **Run on the live service** with External disk selected. You can also run it by hand:
+
+```bash
+npm run target
+```
+
+That listens on `127.0.0.1:8091`. `GET /health`, `GET /status`, `GET /disk`, `POST /reset`, `POST /op`, and `POST /crash` are the whole API.
 
 **Race** compares a guided search with random schedules inside the simulator. The counts are for that run only.
 
@@ -54,7 +63,7 @@ These run as part of `npm test`, and on their own:
 npm run test:faultline
 ```
 
-That checks the simulator zoo, replay rejection, linearizability past ten operations, the live Raft service, and the register.
+That checks the simulator zoo, replay rejection, linearizability past ten operations, the live Raft service, the in-page register, and the separate disk process.
 
 GitHub Actions (`.github/workflows/ci.yml`) typechecks, runs those tests, builds, and clicks through the production preview in a browser.
 
@@ -69,13 +78,14 @@ Vite's preview server prints the local URL (port 8081).
 
 ## Adding a system
 
-Implement `SystemAdapter` in `src/faultline/live/` (`execute` returns client history and status pages only) and register it in `src/faultline/live/runner.ts`. The checker does not import the service. The two adapters in this repo run inside the page so you can try the connector with nothing else installed. A remote database would be another adapter, not a change to the lab.
+Implement `SystemAdapter` for an in-page reference service, or speak HTTP to a process you started yourself the way `runExternal` does. The checker does not import the service. Raft and the register in this repo run inside the page. The disk target is the first process that does not. A remote database would be another adapter, and only against a disposable copy.
 
 ## Layout
 
 - `src/faultline/` — kernel, Raft, bug catalog, hunter, replay codec
-- `src/faultline/live/` — adapters, runner, black-box checks
-- `src/components/` — seismograph and lab console
+- `src/faultline/live/` — adapters, the external HTTP connector, runner, black-box checks
+- `targets/kv-server.mjs` — separate disk process
+- `src/components/` — the lab console
 - `src/routes/` — the page
 - `docs/adr/` — what this lab does and does not claim
 

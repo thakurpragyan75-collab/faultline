@@ -48,6 +48,12 @@ for (let attempt = 0; attempt < 3; attempt++) {
 await page.getByRole("button", { name: "Live" }).click();
 await page.getByRole("button", { name: "Run on the live service" }).click();
 await found.waitFor({ timeout: 30_000 });
+await page.getByRole("button", { name: "External disk" }).click();
+await page.getByText("separate program").waitFor({ timeout: 10_000 });
+await page.getByRole("button", { name: /Amnesia/ }).click();
+await page.getByRole("button", { name: "Run on the live service" }).click();
+await page.getByText("separate process").waitFor({ timeout: 30_000 });
+await found.waitFor({ timeout: 30_000 });
 if (errors.length > 0) {
   console.error(errors.join("\n"));
   await browser.close();

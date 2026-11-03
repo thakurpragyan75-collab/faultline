@@ -2,6 +2,8 @@
 
 Simulation lab unchanged: kernel, eight safety bugs, soundness spot-check, shrink, replay links.
 
-Live execution layer: adapters for a Raft service and a single-node register. The runner injects faults and checks only replies and status pages. Engine tests run from `npm test` and `npm run test:faultline`. GitHub Actions builds, typechecks, runs those tests, and drives the production preview in a browser.
+Live execution layer: in-page Raft and register adapters, plus an external disk process (`targets/kv-server.mjs`) that Faultline does not implement. The connector talks to that process over HTTP, crashes it, and checks the replies and the file the new process reloads.
 
-Open: no remote cluster adapter yet. P2 multi-system platform is not claimed.
+Engine tests run from `npm test` and `npm run test:faultline`, including the external process. GitHub Actions builds, typechecks, runs those tests, and drives Hunt, Live, and External disk in a browser.
+
+Open: no etcd, Postgres, or production-cluster adapter. Do not point this at a system you cannot throw away.

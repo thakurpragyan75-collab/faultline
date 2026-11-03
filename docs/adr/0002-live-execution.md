@@ -11,6 +11,6 @@ Two reference adapters ship in the page so the lab runs with nothing else instal
 - `raft-service` hosts the audited Raft processes. Crashes, partitions, and mutes are applied by the connector. Verification is linearizability of the replies, plus dual-leader and divergent-commit alarms scraped from status pages.
 - `register-service` is a one-process register with a disk. The correct build flushes before it acknowledges. The amnesia build (B05) acknowledges first; a crash before the flush drops the write.
 
-An outside system plugs in by implementing `SystemAdapter` and registering it in the runner. This lab does not attach to etcd, FoundationDB, or a remote cluster. Those would be further adapters, not a change to the checker.
+An outside system plugs in by implementing `SystemAdapter`, or by speaking HTTP the way the external disk connector does. See ADR 0003. This lab does not attach to etcd, FoundationDB, or a remote cluster.
 
 Replay of a live run is a separate token (`?e=`). A forged or oversized payload is rejected. Two executions of the same experiment share a hash because the service clock is the seeded virtual clock, not the wall clock.

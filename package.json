@@ -16,8 +16,9 @@
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/preview-path-prefix.test.ts src/faultline/engine.test.ts src/faultline/live/live.test.ts",
-    "test:faultline": "node --experimental-strip-types --test src/faultline/engine.test.ts src/faultline/live/live.test.ts",
+    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/preview-path-prefix.test.ts src/faultline/engine.test.ts src/faultline/live/live.test.ts src/faultline/live/external.test.ts",
+    "test:faultline": "node --experimental-strip-types --test src/faultline/engine.test.ts src/faultline/live/live.test.ts src/faultline/live/external.test.ts",
+    "target": "node targets/kv-server.mjs",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

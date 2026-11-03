@@ -13,9 +13,9 @@ export const Route = createRootRoute({
       { title: APP_NAME },
       {
         name: "description",
-        content: "Deterministic chaos engine. Hunt a seeded Raft bug, or run the same schedule against a live service.",
+        content: "Find a seeded Raft bug, or crash a separate disk process and read what it actually saved.",
       },
-      { name: "theme-color", content: "#14120e" },
+      { name: "theme-color", content: "#f4efe4" },
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },

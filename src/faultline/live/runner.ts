@@ -11,7 +11,7 @@ import { verifyObservation } from "./verify.ts";
 const ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const MAX_TOKEN = 12_000;
 
-const TARGETS: Record<string, true> = { "raft-service": true, "register-service": true };
+const TARGETS: Record<string, true> = { "raft-service": true, "register-service": true, "external-kv": true };
 const BUGS: Record<string, true> = {
   correct: true,
   B01: true,
@@ -25,6 +25,9 @@ const BUGS: Record<string, true> = {
 };
 
 function adapterFor(id: TargetId): SystemAdapter {
+  if (id === "external-kv") {
+    throw new Error("external-kv is a separate process. Call runExternal.");
+  }
   if (id === "register-service") return registerAdapter;
   return raftAdapter;
 }
@@ -39,18 +42,27 @@ function hashOf(history: Hist[], detail: string): number {
   return mix(x, strHash(detail), history.length, 0, 0) >>> 0;
 }
 
-/** Run one experiment through the connector and judge only the observation. */
-export function runExperiment(experiment: Experiment): LiveReport {
-  const obs = adapterFor(experiment.target).execute(experiment);
-  const violation = verifyObservation(obs, experiment.maxTimeUs);
+/** Judge an observation the connector already collected. */
+export function reportFromObservation(
+  obs: { history: Hist[]; notes: string[]; steps: number },
+  maxTimeUs: number,
+  runs = 1,
+): LiveReport {
+  const violation = verifyObservation(obs as import("./types.ts").Observation, maxTimeUs);
   return {
     violation,
     history: obs.history,
     notes: obs.notes,
     hash: hashOf(obs.history, violation?.detail ?? ""),
     events: obs.steps,
-    runs: 1,
+    runs,
   };
+}
+
+/** Run one experiment through an in-page adapter and judge only the observation. */
+export function runExperiment(experiment: Experiment): LiveReport {
+  const obs = adapterFor(experiment.target).execute(experiment);
+  return reportFromObservation(obs, experiment.maxTimeUs, 1);
 }
 
 function fails(experiment: Experiment): boolean {

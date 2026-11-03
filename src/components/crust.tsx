@@ -49,20 +49,21 @@ export function Crust({ frames, index }: CrustProps) {
   const last = shown[shown.length - 1];
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-72 w-full bg-ink font-mono lg:h-[28rem]" role="img" aria-label="Cluster swimlane and seismograph">
-      <text x="16" y="24" className="fill-muted text-xs">
+    <svg viewBox={`0 0 ${W} ${H}`} className="h-80 w-full bg-panel font-sans lg:h-[32rem] 2xl:h-[40rem]" role="img" aria-label="Cluster swimlane and seismograph">
+      <rect width={W} height={H} className="fill-panel" />
+      <text x="16" y="28" className="fill-muted text-sm">
         nodes
       </text>
       {[0, 1, 2].map((n) => (
         <g key={n}>
-          <text x="16" y={yOf(n) + 4} className="fill-muted text-xs">
+          <text x="16" y={yOf(n) + 4} className="fill-ink text-sm">
             n{n}
           </text>
           <line x1="64" x2={W - 16} y1={yOf(n)} y2={yOf(n)} className="stroke-line" strokeWidth="1" />
         </g>
       ))}
       {shown.length === 0 ? (
-        <text x="64" y="150" className="fill-muted text-sm">
+        <text x="64" y="160" className="fill-muted text-base">
           Waiting for a hunt
         </text>
       ) : null}
@@ -128,11 +129,11 @@ export function Crust({ frames, index }: CrustProps) {
           x2={xOf(last.time)}
           y1="28"
           y2={traceTop - 8}
-          className={last.tone === "bad" ? "stroke-oxide" : "stroke-paper"}
+          className={last.tone === "bad" ? "stroke-oxide" : "stroke-ink"}
           strokeWidth="1"
         />
       ) : null}
-      <text x="16" y="328" className="fill-muted text-xs">
+      <text x="16" y="332" className="fill-ink text-sm">
         trace
       </text>
       <path d={trace} fill="none" className="stroke-amber" strokeWidth="1.5" />
