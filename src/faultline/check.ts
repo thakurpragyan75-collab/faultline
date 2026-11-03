@@ -184,33 +184,110 @@ function modelStep(state: string, op: Hist): string | null {
   return state;
 }
 
-function search(rem: Hist[], state: string): boolean {
-  if (rem.length === 0) return true;
-  for (let i = 0; i < rem.length; i++) {
-    const op = rem[i];
-    if (!op) continue;
-    let blocked = false;
-    for (let j = 0; j < rem.length; j++) {
-      const other = rem[j];
-      if (!other || other === op) continue;
-      if (other.end < op.start) {
-        blocked = true;
-        break;
-      }
-    }
-    if (blocked) continue;
-    const next = modelStep(state, op);
-    if (next === null) continue;
-    const rest: Hist[] = [];
-    for (let j = 0; j < rem.length; j++) {
-      if (j !== i) {
-        const h = rem[j];
-        if (h) rest.push(h);
-      }
-    }
-    if (search(rest, next)) return true;
+function branches(state: string, op: Hist): string[] {
+  if (op.result === "timeout") {
+    if (op.op === "get") return [state];
+    if (op.op === "put") return [state, op.value];
+    return [state, String(intOf(state) + intOf(op.value))];
+  }
+  const next = modelStep(state, op);
+  return next === null ? [] : [next];
+}
+
+function blocked(ops: Hist[], mask: number, op: Hist): boolean {
+  for (let j = 0; j < ops.length; j++) {
+    if ((mask & (1 << j)) !== 0) continue;
+    const other = ops[j];
+    if (!other || other === op) continue;
+    if (other.end < op.start) return true;
   }
   return false;
+}
+
+/** Every state reachable by a linearization, or an empty list when none exists. */
+function endStates(ops: Hist[], state0: string): string[] {
+  const n = ops.length;
+  if (n > 18) return [];
+  const full = (1 << n) - 1;
+  const cache = new Map<string, string[]>();
+  const walk = (mask: number, state: string): string[] => {
+    const key = mask + ":" + state;
+    const hit = cache.get(key);
+    if (hit !== undefined) return hit;
+    if (mask === full) {
+      const done = [state];
+      cache.set(key, done);
+      return done;
+    }
+    const out: string[] = [];
+    for (let i = 0; i < n; i++) {
+      if ((mask & (1 << i)) !== 0) continue;
+      const op = ops[i];
+      if (!op || blocked(ops, mask, op)) continue;
+      const nexts = branches(state, op);
+      const bit = mask | (1 << i);
+      for (let b = 0; b < nexts.length; b++) {
+        const nx = nexts[b];
+        if (nx === undefined) continue;
+        const sub = walk(bit, nx);
+        for (let s = 0; s < sub.length; s++) {
+          const value = sub[s];
+          if (value !== undefined && !out.includes(value)) out.push(value);
+        }
+      }
+    }
+    cache.set(key, out);
+    return out;
+  };
+  return walk(0, state0);
+}
+
+function earliestCut(ops: Hist[]): number | null {
+  let best: number | null = null;
+  for (let i = 0; i < ops.length; i++) {
+    const time = ops[i]?.end;
+    if (time === undefined) continue;
+    let left = 0;
+    let right = 0;
+    let span = 0;
+    for (let j = 0; j < ops.length; j++) {
+      const op = ops[j];
+      if (!op) continue;
+      if (op.end <= time) left += 1;
+      else if (op.start >= time) right += 1;
+      else span += 1;
+    }
+    if (span === 0 && left > 0 && right > 0 && (best === null || time < best)) best = time;
+  }
+  return best;
+}
+
+function linearizable(ops: Hist[], state: string): "ok" | "bad" | "unverified" {
+  if (ops.length === 0) return "ok";
+  if (ops.length <= 18) return endStates(ops, state).length > 0 ? "ok" : "bad";
+  const cut = earliestCut(ops);
+  if (cut === null) return "unverified";
+  const left: Hist[] = [];
+  const right: Hist[] = [];
+  for (let i = 0; i < ops.length; i++) {
+    const op = ops[i];
+    if (!op) continue;
+    if (op.end <= cut) left.push(op);
+    else if (op.start >= cut) right.push(op);
+    else return "unverified";
+  }
+  if (left.length === 0 || left.length > 18 || right.length === 0) return "unverified";
+  const ends = endStates(left, state);
+  if (ends.length === 0) return "bad";
+  let unverified = false;
+  for (let i = 0; i < ends.length; i++) {
+    const next = ends[i];
+    if (next === undefined) continue;
+    const sub = linearizable(right, next);
+    if (sub === "ok") return "ok";
+    if (sub === "unverified") unverified = true;
+  }
+  return unverified ? "unverified" : "bad";
 }
 
 function histLine(h: Hist): string {
@@ -230,22 +307,26 @@ export function checkLinear(history: Hist[], time: number, event: number): Viola
       const h = history[i];
       if (h && h.key === key) ops.push(h);
     }
-    if (ops.length > 10) continue;
+    if (ops.length === 0) continue;
     const counter = key === "c" || ops.some((o) => o.op === "add");
-    const ok = search(ops, counter ? "0" : "");
-    if (!ok) {
-      const lines: string[] = [];
-      for (let i = 0; i < ops.length; i++) {
-        const h = ops[i];
-        if (h) lines.push(histLine(h));
-      }
-      return {
-        kind: "linearizability",
-        time,
-        event,
-        detail: "History for key " + key + " is not linearizable. " + lines.join(" · "),
-      };
+    const verdict = linearizable(ops, counter ? "0" : "");
+    if (verdict === "ok") continue;
+    const lines: string[] = [];
+    const cap = Math.min(ops.length, 8);
+    for (let i = 0; i < cap; i++) {
+      const h = ops[i];
+      if (h) lines.push(histLine(h));
     }
+    const prefix =
+      verdict === "unverified"
+        ? "History for key " + key + " has " + ops.length + " overlapping operations, past what this checker can certify. "
+        : "History for key " + key + " is not linearizable. ";
+    return {
+      kind: "linearizability",
+      time,
+      event,
+      detail: prefix + lines.join(" · "),
+    };
   }
   return null;
 }

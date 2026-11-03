@@ -1,7 +1,7 @@
 # STATE
 
-Completed: in-browser P0 seismograph. Kernel, eight safety bugs (B01–B07, B11), correct-Raft soundness spot-check, shrink, replay links.
+Simulation lab unchanged: kernel, eight safety bugs, soundness spot-check, shrink, replay links.
 
-Public API: `runScenario`, `candidates`, `shrinkScenario`, `encodeReplay`, `decodeReplay`, `narrate`.
+Live execution layer: adapters for a Raft service and a single-node register. The runner injects faults and checks only replies and status pages. Engine tests run from `npm test` and `npm run test:faultline`. GitHub Actions builds, typechecks, runs those tests, and drives the production preview in a browser.
 
-Open: blueprint sections 6–19 were missing, so P1 strategies beyond aimed schedules, P2 systems, and measured benchmark tables are not claimed.
+Open: no remote cluster adapter yet. P2 multi-system platform is not claimed.

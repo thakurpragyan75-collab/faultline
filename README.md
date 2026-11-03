@@ -25,31 +25,38 @@ No account and no database are required. Leave `.grok/app-env.json` in place. It
 
 **Self quorum** is selected when you open the lab.
 
-1. Press **Hunt this fault**. The hunter runs schedules until a write is acknowledged and then lost, shrinks that schedule, and draws the three nodes.
-2. Scrub the trace, or press play.
-3. Press **Copy replay**. The link (`?r=`) replays that same run.
+**Hunt** steps the built-in simulator. Press **Hunt this fault**, scrub the trace, then **Copy replay**. The link (`?r=`) replays that same simulated run.
 
-The other chips are the same seeded safety bugs:
+**Live** is the execution layer. It does not step the simulator. Pick **Raft service** or **Register service**, then press **Run on the live service**. Faultline starts that service, injects crashes and partitions, and checks only the replies and status pages that come back. **Copy replay** stores that experiment (`?e=`). Run it twice and the hash matches.
+
+The register has two builds. **Correct** flushes a write before acknowledging it, so the crash does not lose it. **Amnesia** acknowledges first. Any other chip runs the correct register on purpose.
+
+**Race** compares a guided search with random schedules inside the simulator. The counts are for that run only.
 
 | Chip | What is wrong |
 | --- | --- |
 | Optimistic match | The leader pretends every peer is already caught up |
 | Blind vote | A vote ignores whether the candidate's log is up to date |
+| Self quorum | The leader counts itself as a majority |
 | Double vote | A node can vote twice in one term |
-| Amnesia | Restart wipes the log, the term, and the vote |
+| Amnesia | Restart wipes the log, or the register flushes too late |
 | Stale read | A leader answers reads with no quorum check |
 | Skip odd entries | The state machine never applies odd log indexes |
 | Retry applies twice | A client retry is not deduplicated |
 
-**Race** compares a guided search with random schedules. The counts are for that run only. **Correct Raft** is a soundness spot-check and should stay clean.
+**Correct Raft** is a soundness spot-check and should stay clean, in the simulator and on the live Raft service.
 
 ## Engine tests
 
+These run as part of `npm test`, and on their own:
+
 ```bash
-node --experimental-strip-types --test src/faultline/engine.test.ts
+npm run test:faultline
 ```
 
-That checks that every bug in the zoo is found, that the correct Raft stays clean, that fast and recorded runs hash the same, and that a shrunk replay still fails and round-trips.
+That checks the simulator zoo, replay rejection, linearizability past ten operations, the live Raft service, and the register.
+
+GitHub Actions (`.github/workflows/ci.yml`) typechecks, runs those tests, builds, and clicks through the production preview in a browser.
 
 ## Production build
 
@@ -58,11 +65,17 @@ npm run build
 npm run preview
 ```
 
-Vite's preview server prints the local URL (port 4173 by default).
+Vite's preview server prints the local URL (port 8081).
+
+## Adding a system
+
+Implement `SystemAdapter` in `src/faultline/live/` (`execute` returns client history and status pages only) and register it in `src/faultline/live/runner.ts`. The checker does not import the service. The two adapters in this repo run inside the page so you can try the connector with nothing else installed. A remote database would be another adapter, not a change to the lab.
 
 ## Layout
 
 - `src/faultline/` — kernel, Raft, bug catalog, hunter, replay codec
+- `src/faultline/live/` — adapters, runner, black-box checks
 - `src/components/` — seismograph and lab console
 - `src/routes/` — the page
-- `docs/adr/0001-spec-gap.md` — what this lab does and does not claim
+- `docs/adr/` — what this lab does and does not claim
+

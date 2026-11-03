@@ -7,6 +7,15 @@ export { keyed } from "./keyed.ts";
 export { candidates, decodeReplay, encodeReplay, randomScenario, shrinkScenario, targeted } from "./scenarios.ts";
 export type { BugId, Fault, Frame, Outcome, Scenario, Violation, WorkItem } from "./types.ts";
 export { runScenario } from "./world.ts";
+export {
+  decodeExperiment,
+  encodeExperiment,
+  raftExperiment,
+  registerExperiment,
+  runExperiment,
+  shrinkExperiment,
+} from "./live/runner.ts";
+export type { Experiment, LiveReport, TargetId } from "./live/types.ts";
 
 import type { BugId, Outcome } from "./types.ts";
 import { bugInfo } from "./bugs.ts";

@@ -5,17 +5,23 @@ import {
   ZOO,
   bugInfo,
   candidates,
+  decodeExperiment,
   decodeReplay,
+  encodeExperiment,
   encodeReplay,
   narrate,
+  raftExperiment,
   randomScenario,
+  registerExperiment,
+  runExperiment,
   runScenario,
+  shrinkExperiment,
   shrinkScenario,
 } from "@/faultline/index.ts";
-import type { BugId, Frame, Outcome, Scenario } from "@/faultline/index.ts";
+import type { BugId, Frame, LiveReport, Outcome, Scenario, TargetId } from "@/faultline/index.ts";
 
 type Phase = "idle" | "hunting" | "found" | "clean";
-type Mode = "hunt" | "race";
+type Mode = "hunt" | "race" | "live";
 
 type Race = {
   guided: number;
@@ -47,12 +53,28 @@ export function Console() {
   const [playing, setPlaying] = useState(false);
   const [copied, setCopied] = useState(false);
   const [race, setRace] = useState<Race | null>(null);
+  const [target, setTarget] = useState<TargetId>("raft-service");
+  const [live, setLive] = useState<LiveReport | null>(null);
   const run = useRef(0);
   const info = bugInfo(bug);
   const frames: Frame[] = outcome?.frames ?? [];
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const liveToken = params.get("e");
+    if (liveToken) {
+      const experiment = decodeExperiment(liveToken);
+      if (experiment) {
+        const report = runExperiment(experiment);
+        setMode("live");
+        setTarget(experiment.target);
+        setBug(experiment.bug);
+        setLive(report);
+        setNote(report.violation ? report.violation.detail : report.notes[0] ?? "Service stayed inside the rules.");
+        setPhase(report.violation ? "found" : "clean");
+        return;
+      }
+    }
     const token = params.get("r");
     if (!token) return;
     const decoded = decodeReplay(token);
@@ -174,6 +196,45 @@ export function Console() {
     setPhase(gf || rf ? "found" : "clean");
   }
 
+  async function runLive(next: BugId, which: TargetId) {
+    const id = ++run.current;
+    setMode("live");
+    setBug(next);
+    setTarget(which);
+    setPhase("hunting");
+    setOutcome(null);
+    setLive(null);
+    setNote("");
+    setPlaying(false);
+    await wait();
+    if (run.current !== id) return;
+    const experiment = which === "register-service" ? registerExperiment(next) : raftExperiment(next);
+    let report = runExperiment(experiment);
+    let used = experiment;
+    if (report.violation) {
+      const shrunk = shrinkExperiment(experiment);
+      const again = runExperiment(shrunk.experiment);
+      if (again.violation) {
+        used = shrunk.experiment;
+        report = { ...again, runs: shrunk.runs };
+      }
+    }
+    if (run.current !== id) return;
+    setLive(report);
+    setNote(
+      report.violation
+        ? report.violation.detail
+        : which === "register-service" && next !== "B05" && next !== "correct"
+          ? "This register build is correct. The crash did not lose the write. Pick Amnesia to see the defective build."
+          : "The service answered inside the rules. Hash " + report.hash.toString(16) + ".",
+    );
+    setPhase(report.violation ? "found" : "clean");
+    const url = new URL(window.location.href);
+    url.searchParams.delete("r");
+    url.searchParams.set("e", encodeExperiment(used));
+    window.history.replaceState(null, "", url);
+  }
+
   async function copyLink() {
     try {
       await navigator.clipboard.writeText(window.location.href);
@@ -189,12 +250,16 @@ export function Console() {
     phase === "hunting"
       ? mode === "race"
         ? "Racing guided search against plain random."
-        : "Trial " + trials + " of " + budget + "."
+        : mode === "live"
+          ? "Driving the connected service."
+          : "Trial " + trials + " of " + budget + "."
       : phase === "found"
         ? "Violation held still."
         : phase === "clean"
           ? "Nothing broke."
-          : "Pick a fault and run the hunt.";
+          : mode === "live"
+            ? "Connect a service and run the schedule against it."
+            : "Pick a fault and run the hunt.";
 
   return (
     <main className="min-h-dvh overflow-x-hidden bg-ink text-paper">
@@ -202,7 +267,7 @@ export function Console() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="font-display text-4xl italic leading-none text-paper">Faultline</p>
-            <p className="mt-2 text-sm text-muted">Deterministic chaos engine · Raft under a fake clock</p>
+            <p className="mt-2 text-sm text-muted">Deterministic Raft lab · live service connector</p>
           </div>
           <div className="flex gap-2">
             <button
@@ -225,6 +290,16 @@ export function Console() {
             >
               Race
             </button>
+            <button
+              type="button"
+              onClick={() => setMode("live")}
+              className={
+                "min-h-11 rounded-card border px-4 text-sm " +
+                (mode === "live" ? "border-amber bg-panel-2 text-paper" : "border-line bg-panel text-muted")
+              }
+            >
+              Live
+            </button>
           </div>
         </div>
       </header>
@@ -244,7 +319,7 @@ export function Console() {
                     type="button"
                     onClick={() => {
                       setBug(row.id);
-                      setMode("hunt");
+                      if (mode !== "live") setMode("hunt");
                     }}
                     className={
                       "flex min-h-11 w-full flex-col items-start rounded-card border px-3 py-2 text-left " +
@@ -276,7 +351,7 @@ export function Console() {
                   <Play className="size-4" aria-hidden />
                   {bug === "correct" ? "Spot-check soundness" : "Hunt this fault"}
                 </button>
-              ) : (
+              ) : mode === "race" ? (
                 <button
                   type="button"
                   onClick={() => void startRace(bug)}
@@ -286,11 +361,60 @@ export function Console() {
                   <Activity className="size-4" aria-hidden />
                   Race random vs guided
                 </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void runLive(bug, target)}
+                  disabled={phase === "hunting"}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-card bg-oxide px-4 text-sm text-ink disabled:opacity-60"
+                >
+                  <Activity className="size-4" aria-hidden />
+                  Run on the live service
+                </button>
               )}
             </div>
           </div>
 
-          {mode === "race" && race ? (
+          {mode === "live" ? (
+            <div className="px-4 pb-4">
+              <div className="mb-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTarget("raft-service")}
+                  className={
+                    "min-h-11 rounded-card border px-3 text-sm " +
+                    (target === "raft-service" ? "border-amber bg-panel-2 text-paper" : "border-line bg-panel text-muted")
+                  }
+                >
+                  Raft service
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTarget("register-service")}
+                  className={
+                    "min-h-11 rounded-card border px-3 text-sm " +
+                    (target === "register-service"
+                      ? "border-amber bg-panel-2 text-paper"
+                      : "border-line bg-panel text-muted")
+                  }
+                >
+                  Register service
+                </button>
+              </div>
+              <p className="mb-3 text-sm leading-relaxed text-muted">
+                {target === "raft-service"
+                  ? "Three Raft processes behind the connector. Faultline injects the schedule and reads only replies and status pages."
+                  : "One register with a disk. Amnesia acknowledges the write, then a crash arrives before the flush."}
+              </p>
+              <ol className="max-h-80 space-y-1 overflow-y-auto text-xs text-muted">
+                {(live?.notes ?? ["Waiting for a live run."]).map((line, index) => (
+                  <li key={index + line} className={line.includes("→ empty") || line.includes("power") ? "text-paper" : undefined}>
+                    {line}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : mode === "race" && race ? (
             <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2">
               <RaceCard label="Guided" trials={race.guided} found={race.guidedFound} />
               <RaceCard label="Random" trials={race.random} found={race.randomFound} />
@@ -346,6 +470,39 @@ export function Console() {
           <h1 className="font-display mt-1 text-3xl italic text-paper">{info.name}</h1>
           <p className="mt-3 text-sm leading-relaxed text-muted">{info.summary}</p>
           <p className="mt-3 text-sm leading-relaxed text-paper">{info.defect}</p>
+
+          {phase === "found" && live?.violation && mode === "live" ? (
+            <div className="mt-5 rounded-card border border-oxide bg-panel p-3">
+              <p className="text-xs uppercase tracking-widest text-oxide">{live.violation.kind}</p>
+              <p className="mt-2 text-sm leading-relaxed text-paper">{note}</p>
+              <dl className="mt-3 grid grid-cols-2 gap-2 text-xs tabular-nums text-muted">
+                <div>
+                  <dt>Service steps</dt>
+                  <dd className="text-paper">{live.events}</dd>
+                </div>
+                <div>
+                  <dt>Shrink passes</dt>
+                  <dd className="text-paper">{live.runs}</dd>
+                </div>
+                <div>
+                  <dt>Observed calls</dt>
+                  <dd className="text-paper">{live.history.length}</dd>
+                </div>
+                <div>
+                  <dt>Hash</dt>
+                  <dd className="truncate text-paper">{live.hash.toString(16)}</dd>
+                </div>
+              </dl>
+              <button
+                type="button"
+                onClick={() => void copyLink()}
+                className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm text-amber"
+              >
+                {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+                {copied ? "Link copied" : "Copy replay link"}
+              </button>
+            </div>
+          ) : null}
 
           {phase === "found" && outcome?.violation && mode === "hunt" ? (
             <div className="mt-5 rounded-card border border-oxide bg-panel p-3">
@@ -409,8 +566,9 @@ export function Console() {
           ) : null}
 
           <p className="mt-6 text-xs leading-relaxed text-muted">
-            Same seed, same hash, in this tab. Client replies are instant; inter-node messages take keyed latency and
-            die if the sender crashes. Figures on screen are from this run.
+            {mode === "live"
+              ? "Live mode does not step the simulator. The connector starts a disposable service, injects crashes and partitions, and checks the replies. Same schedule, same hash."
+              : "Same seed, same hash, in this tab. Client replies are instant; inter-node messages take keyed latency and die if the sender crashes. Figures on screen are from this run."}
           </p>
         </aside>
       </div>

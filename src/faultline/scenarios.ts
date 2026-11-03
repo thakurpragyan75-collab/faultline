@@ -354,6 +354,7 @@ export function encodeReplay(scenario: Scenario): string {
 
 /** Inverse of encodeReplay. Returns null when the payload is not a scenario. */
 export function decodeReplay(text: string): Scenario | null {
+  if (text.length === 0 || text.length > MAX_REPLAY) return null;
   const map: Record<string, number> = {};
   for (let i = 0; i < ALPHA.length; i++) {
     const ch = ALPHA[i];
@@ -375,25 +376,107 @@ export function decodeReplay(text: string): Scenario | null {
   let json = "";
   for (let i = 0; i < bytes.length; i++) json += String.fromCharCode(bytes[i] ?? 0);
   try {
-    const raw: unknown = JSON.parse(json);
-    if (!isScenario(raw)) return null;
-    return raw;
+    return toScenario(JSON.parse(json));
   } catch {
     return null;
   }
 }
 
-function isScenario(v: unknown): v is Scenario {
+const BUGS: Record<string, true> = {
+  correct: true,
+  B01: true,
+  B02: true,
+  B03: true,
+  B04: true,
+  B05: true,
+  B06: true,
+  B07: true,
+  B11: true,
+};
+
+const MAX_REPLAY = 8_192;
+
+function isInt(v: unknown, min: number, max: number): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v >= min && v <= max;
+}
+
+function isToken(v: unknown, max: number): v is string {
+  return typeof v === "string" && v.length <= max && /^[\x20-\x7e]*$/.test(v);
+}
+
+function isFault(v: unknown, nodes: number): v is Fault {
+  if (!v || typeof v !== "object") return false;
+  const o = v as Record<string, unknown>;
+  if (!isInt(o.at, 0, 30_000_000) || !isInt(o.until, 0, 30_000_000) || o.until < o.at) return false;
+  if (o.kind === "crash" || o.kind === "isolate" || o.kind === "mute") {
+    return isInt(o.node, 0, nodes - 1);
+  }
+  if (o.kind === "cut") {
+    return isInt(o.a, 0, nodes - 1) && isInt(o.b, 0, nodes - 1) && o.a !== o.b;
+  }
+  return false;
+}
+
+function isWork(v: unknown, nodes: number): v is WorkItem {
   if (!v || typeof v !== "object") return false;
   const o = v as Record<string, unknown>;
   return (
-    typeof o.seed === "number" &&
-    typeof o.bug === "string" &&
-    typeof o.nodes === "number" &&
-    Array.isArray(o.electionBonusUs) &&
-    typeof o.tightElection === "boolean" &&
-    Array.isArray(o.faults) &&
-    Array.isArray(o.workload) &&
-    typeof o.maxTimeUs === "number"
+    isInt(o.at, 0, 30_000_000) &&
+    isInt(o.client, 0, 32) &&
+    isInt(o.seq, 1, 10_000) &&
+    isInt(o.node, 0, nodes - 1) &&
+    (o.op === "put" || o.op === "get" || o.op === "add") &&
+    isToken(o.key, 12) &&
+    o.key.length > 0 &&
+    isToken(o.value, 16)
   );
+}
+
+function toScenario(v: unknown): Scenario | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  if (!isInt(o.nodes, 1, 5) || !isInt(o.seed, 0, 1_000_000_000)) return null;
+  if (typeof o.bug !== "string" || !BUGS[o.bug]) return null;
+  if (!Array.isArray(o.electionBonusUs) || o.electionBonusUs.length !== o.nodes) return null;
+  const electionBonusUs: number[] = [];
+  for (let i = 0; i < o.electionBonusUs.length; i++) {
+    const bonus = o.electionBonusUs[i];
+    if (!isInt(bonus, 0, 10_000_000)) return null;
+    electionBonusUs.push(bonus);
+  }
+  if (typeof o.tightElection !== "boolean") return null;
+  if (!Array.isArray(o.faults) || o.faults.length > 32) return null;
+  if (!Array.isArray(o.workload) || o.workload.length > 48) return null;
+  if (!isInt(o.maxTimeUs, 1, 30_000_000)) return null;
+  const faults: Fault[] = [];
+  for (let i = 0; i < o.faults.length; i++) {
+    const fault = o.faults[i];
+    if (!isFault(fault, o.nodes)) return null;
+    if (fault.kind === "cut") faults.push({ kind: "cut", a: fault.a, b: fault.b, at: fault.at, until: fault.until });
+    else faults.push({ kind: fault.kind, node: fault.node, at: fault.at, until: fault.until });
+  }
+  const workload: WorkItem[] = [];
+  for (let i = 0; i < o.workload.length; i++) {
+    const item = o.workload[i];
+    if (!isWork(item, o.nodes)) return null;
+    workload.push({
+      at: item.at,
+      client: item.client,
+      seq: item.seq,
+      node: item.node,
+      op: item.op,
+      key: item.key,
+      value: item.value,
+    });
+  }
+  return {
+    seed: o.seed,
+    bug: o.bug as Scenario["bug"],
+    nodes: o.nodes,
+    electionBonusUs,
+    tightElection: o.tightElection,
+    faults,
+    workload,
+    maxTimeUs: o.maxTimeUs,
+  };
 }
